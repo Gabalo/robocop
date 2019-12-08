@@ -16,6 +16,8 @@ import genius.core.issue.IssueDiscrete;
 import genius.core.issue.ValueDiscrete;
 import genius.core.parties.AbstractNegotiationParty;
 import genius.core.parties.NegotiationInfo;
+import genius.core.uncertainty.User;
+import genius.core.uncertainty.UserModel;
 import genius.core.utility.AbstractUtilitySpace;
 import genius.core.utility.AdditiveUtilitySpace;
 import genius.core.utility.EvaluatorDiscrete;
@@ -46,6 +48,18 @@ public class C3P0 extends AbstractNegotiationParty
 	public void init(NegotiationInfo info) 
 	{
 		super.init(info);
+		
+		if (hasPreferenceUncertainty()) {
+			System.out.println("Preference uncertainty is enabled.");
+			System.out.println("Agent ID: " + info.getAgentID().toString());
+			System.out.println("No. of possible bids: " + userModel.getDomain().getNumberOfPossibleBids());
+			System.out.println("No. of bids in the preference ranking: " + userModel.getBidRanking().getSize());
+			System.out.println("Elicitation Cost: " + info.getUser().getElicitationCost());
+			System.out.println("Bid with lowest utility: " + userModel.getBidRanking().getMinimalBid());
+			System.out.println("Bid with highest utility: " + userModel.getBidRanking().getMaximalBid());
+			System.out.println("5th bid in the ranking list: " + userModel.getBidRanking().getBidOrder().get(5));
+		}
+		
 		AbstractUtilitySpace utilitySpace = info.getUtilitySpace();
 		AdditiveUtilitySpace additiveUtilitySpace = (AdditiveUtilitySpace) utilitySpace;
 
@@ -101,20 +115,31 @@ public class C3P0 extends AbstractNegotiationParty
 	public Action chooseAction(List<Class<? extends Action>> possibleActions) 
 	{
 		// C3P0 START - Check for acceptance if we have received an offer
-		if (lastOffer != null)
+		double threshold = (getUtility(getMaxUtilityBid()) + getUtility(getMinUtilityBid()))/2;
+		if (lastOffer != null) {
 			if (getUtility(lastOffer) >= getUtility(getMaxUtilityBid())) {
 				System.out.println("Accepted bid equal or above MaxUtility bid: " + getUtility(getMaxUtilityBid()));
 				return new Accept(getPartyId(), lastOffer);}
-			if (timeline.getTime() >= 0.5)
-				if (getUtility(lastOffer) >= utilitySpace.getReservationValue())
-					if (getUtility(lastOffer) >= ((getUtility(getMaxUtilityBid()) + getUtility(getMinUtilityBid()))/2)) {
-						System.out.println("Accepted bid above threshold: " + ((getUtility(getMaxUtilityBid()) + getUtility(getMinUtilityBid()))/2));
-						return new Accept(getPartyId(), lastOffer);}		// G: Accept any offer during the final times
-					else 
-						return new EndNegotiation(getPartyId()); 
-				else	// G: If the offer is lower than the Reserv. Value then End Negotiation
+			if (timeline.getTime() >= 0.5) {
+				if (getUtility(lastOffer) >= utilitySpace.getReservationValue()) {
+					if (getUtility(lastOffer) >= threshold ) {
+						System.out.println("Accepted bid above threshold: " + threshold + " at time: " + timeline.getTime() );
+						return new Accept(getPartyId(), lastOffer);}		// G: Accept offer above thresh. during the final half of timeline
+				} 
+				else {	// G: If the offer is lower than the Reserv. Value then End Negotiation
+					System.out.println("C3P0 ended negotiation at time: " + timeline.getTime() + ", bid lower than reserv. value: " + utilitySpace.getReservationValue());
 					return new EndNegotiation(getPartyId());
-		
+				}
+			}
+			if (timeline.getTime() >= 0.95)
+				if (getUtility(lastOffer) >= utilitySpace.getReservationValue()) {
+					System.out.println("Accepted (any) bid with terrible utility: " + getUtility(lastOffer));
+					return new Accept(getPartyId(), lastOffer);} // G: Accept any offer at the end of the timeline
+				else {	// G: If the offer is lower than the Reserv. Value then End Negotiation
+					System.out.println("C3P0 ended negotiation at time: " + timeline.getTime() + ", bid lower than reserv. value: " + utilitySpace.getReservationValue());
+					return new EndNegotiation(getPartyId());
+				}
+		}
 		// Otherwise, send out a random offer above the target utility 
 		List<Bid> rBids = generateRandomBids();
 		double OpponentUtility;
