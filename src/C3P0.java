@@ -30,6 +30,9 @@ import genius.core.utility.EvaluatorDiscrete;
 public class C3P0 extends AbstractNegotiationParty 
 {
 	private static double MINIMUM_TARGET = 0.8;
+	private static double INITIAL_T = 0.2;
+	private static double BETA = 5.0;
+	
 	private Bid lastOffer;
 	// C3P0 START
 	private List<List<Integer>> FreqTable1 = new ArrayList<List<Integer>>();
@@ -39,6 +42,9 @@ public class C3P0 extends AbstractNegotiationParty
 	private List<Double> NormWeights = new ArrayList<Double>();
 	private List<Integer> ValueIndex = new ArrayList<Integer>();
 	private int NoOfBids;
+	
+	double t = INITIAL_T;		// Threshold for accepting/proposing bids in the bids ranking. 0.2 = Top 20% bids
+
 	// C3P0 END
 	
 	/**
@@ -115,33 +121,51 @@ public class C3P0 extends AbstractNegotiationParty
 	public Action chooseAction(List<Class<? extends Action>> possibleActions) 
 	{
 		// C3P0 START - Check for acceptance if we have received an offer
-		double threshold = (getUtility(getMaxUtilityBid()) + getUtility(getMinUtilityBid()))/2;
+		int rankingSize = userModel.getBidRanking().getSize();
+		int t_index = (int)(rankingSize * (1.0 - t));	// Index to separate bids above the threshold
+		List<Bid> bidOrder = userModel.getBidRanking().getBidOrder();	// Bids ranking
+		List<Bid> bidOrderT = bidOrder.subList(t_index,rankingSize);	// Bids ranking above threshold
+		
 		if (lastOffer != null) {
-			if (getUtility(lastOffer) >= getUtility(getMaxUtilityBid())) {
-				System.out.println("Accepted bid equal or above MaxUtility bid: " + getUtility(getMaxUtilityBid()));
-				return new Accept(getPartyId(), lastOffer);}
-			if (timeline.getTime() >= 0.5) {
-				if (getUtility(lastOffer) >= utilitySpace.getReservationValue()) {
-					if (getUtility(lastOffer) >= threshold ) {
-						System.out.println("Accepted bid above threshold: " + threshold + " at time: " + timeline.getTime() );
-						return new Accept(getPartyId(), lastOffer);}		// G: Accept offer above thresh. during the final half of timeline
-				} 
-				else {	// G: If the offer is lower than the Reserv. Value then End Negotiation
-					System.out.println("C3P0 ended negotiation at time: " + timeline.getTime() + ", bid lower than reserv. value: " + utilitySpace.getReservationValue());
-					return new EndNegotiation(getPartyId());
-				}
+			if(!(bidOrder.contains(lastOffer))) {
+				userModel = user.elicitRank(lastOffer, userModel);
+				// Update variables:
+				rankingSize = userModel.getBidRanking().getSize();
+				System.out.println("Updating rankings. New size: " + rankingSize);
+				t_index = (int)(rankingSize * (1.0 - t));
+				bidOrder = userModel.getBidRanking().getBidOrder();
+				bidOrderT = bidOrder.subList(t_index,rankingSize);
 			}
-			if (timeline.getTime() >= 0.95)
+			
+			System.out.println("Threshold ranking index: " + t_index);
+			System.out.println("Bid ranking: " + (rankingSize - bidOrder.indexOf(lastOffer)));
+			
+			//t = INITIAL_T + (timeline.getTime() * 0.6);
+			t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * (1 - INITIAL_T);
+			// Change the threshold with time
+			
+			System.out.println("Updating T: " + t);		
+			
+			if(bidOrderT.contains(lastOffer)) {
+				System.out.println("Accepted bid present in the thresh. ranking.");
+				System.out.println("Ranking: " + (rankingSize - bidOrder.indexOf(lastOffer)));
+				System.out.println("Threshold Ranking: " + bidOrderT);
+				
+				return new Accept(getPartyId(), lastOffer);			
+			}
+			
+			if (timeline.getTime() >= 0.95) {
 				if (getUtility(lastOffer) >= utilitySpace.getReservationValue()) {
-					System.out.println("Accepted (any) bid with terrible utility: " + getUtility(lastOffer));
+					System.out.println("Accepted (any) bid with utility: " + getUtility(lastOffer));
 					return new Accept(getPartyId(), lastOffer);} // G: Accept any offer at the end of the timeline
 				else {	// G: If the offer is lower than the Reserv. Value then End Negotiation
 					System.out.println("C3P0 ended negotiation at time: " + timeline.getTime() + ", bid lower than reserv. value: " + utilitySpace.getReservationValue());
 					return new EndNegotiation(getPartyId());
 				}
+			}
 		}
 		// Otherwise, send out a random offer above the target utility 
-		List<Bid> rBids = generateRandomBids();
+		List<Bid> rBids = generateRandomBidsRanked(bidOrderT);
 		double OpponentUtility;
 		double WinningOpUtility = 0.0;
 		Bid WinningBid = generateRandomBidAboveTarget();
@@ -154,9 +178,22 @@ public class C3P0 extends AbstractNegotiationParty
 				//System.out.println("New winning utility!: " + WinningOpUtility);
 			}
 		}
+		System.out.println("Offering bid with ranking: " + (rankingSize - bidOrder.indexOf(WinningBid)));
+		
 		//System.out.println("rBids array size: " + rBids.size());
 		// C3P0 END
 		return new Offer(getPartyId(), WinningBid);
+	}
+	
+	private int updateRankings(double t, List<Bid> bidOrder, List<Bid> bidOrderT) {
+		int t_index = 0;
+		int rankingSize = 0;
+		rankingSize = userModel.getBidRanking().getSize();
+		System.out.println("Updating rankings. New size: " + rankingSize);
+		t_index = (int)(rankingSize * (1.0 - t));
+		bidOrder = userModel.getBidRanking().getBidOrder();
+		bidOrderT = bidOrder.subList(t_index,rankingSize);
+		return rankingSize;
 	}
 	
 	private Bid getMaxUtilityBid() {
@@ -200,13 +237,33 @@ public class C3P0 extends AbstractNegotiationParty
 		
 		double util;
 		int i = 0;
-		// try 100 times to find a bid under the target utility
+		// try N times to find bids under the target utility
 		do 
 		{	
 			randomBid = generateRandomBid();
 			util = utilitySpace.getUtility(randomBid);
 			if (util > MINIMUM_TARGET) {
 				rBids.add(randomBid);
+			}
+		} 
+		while (i++ < 1000);		
+		return rBids;
+	}
+	
+	private List<Bid> generateRandomBidsRanked(List<Bid> bidOrderT) 
+	{
+		List<Bid> rBids = new ArrayList<Bid>();
+		Bid randomBid;
+
+		int i = 0;
+		// try N times to find bids under the threshold ranking
+		do 
+		{	
+			randomBid = generateRandomBid();
+			if(bidOrderT.contains(randomBid)) {
+				if(!(rBids.contains(randomBid))) {
+					rBids.add(randomBid);
+				}
 			}
 		} 
 		while (i++ < 1000);		
