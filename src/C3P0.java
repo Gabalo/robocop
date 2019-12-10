@@ -1,4 +1,4 @@
-package groupx;
+package group36;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +30,10 @@ import genius.core.utility.EvaluatorDiscrete;
 public class C3P0 extends AbstractNegotiationParty 
 {
 	private static double MINIMUM_TARGET = 0.8;
-	private static double INITIAL_T = 0.2;
-	private static double BETA = 5.0;
+	private static double INITIAL_T = 0.05;
+	private static double BETA = 5;
+	
+	private double coeff = 0;
 	
 	private Bid lastOffer;
 	// C3P0 START
@@ -42,6 +44,9 @@ public class C3P0 extends AbstractNegotiationParty
 	private List<Double> NormWeights = new ArrayList<Double>();
 	private List<Integer> ValueIndex = new ArrayList<Integer>();
 	private int NoOfBids;
+	
+	private List<Double> opponentUtility = new ArrayList<Double>();
+	private List<Double> opponentAvgUtility = new ArrayList<Double>();
 	
 	double t = INITIAL_T;		// Threshold for accepting/proposing bids in the bids ranking. 0.2 = Top 20% bids
 
@@ -61,9 +66,9 @@ public class C3P0 extends AbstractNegotiationParty
 			System.out.println("No. of possible bids: " + userModel.getDomain().getNumberOfPossibleBids());
 			System.out.println("No. of bids in the preference ranking: " + userModel.getBidRanking().getSize());
 			System.out.println("Elicitation Cost: " + info.getUser().getElicitationCost());
-			System.out.println("Bid with lowest utility: " + userModel.getBidRanking().getMinimalBid());
-			System.out.println("Bid with highest utility: " + userModel.getBidRanking().getMaximalBid());
-			System.out.println("5th bid in the ranking list: " + userModel.getBidRanking().getBidOrder().get(5));
+			System.out.println("Bid with lowest utility: " + userModel.getBidRanking().getMinimalBid() + "( " + getUtility(userModel.getBidRanking().getMinimalBid()) + " )");
+			System.out.println("Bid with highest utility: " + userModel.getBidRanking().getMaximalBid()  + "( " + getUtility(userModel.getBidRanking().getMaximalBid()) + " )");
+			System.out.println("5th bid in the ranking list: " + userModel.getBidRanking().getBidOrder().get(135) + "( " + getUtility(userModel.getBidRanking().getBidOrder().get(135)) + " )");
 		}
 		
 		AbstractUtilitySpace utilitySpace = info.getUtilitySpace();
@@ -115,7 +120,6 @@ public class C3P0 extends AbstractNegotiationParty
 		    // C3P0 END
 		}	
 	}
-
 	
 	@Override
 	public Action chooseAction(List<Class<? extends Action>> possibleActions) 
@@ -141,8 +145,13 @@ public class C3P0 extends AbstractNegotiationParty
 			System.out.println("Bid ranking: " + (rankingSize - bidOrder.indexOf(lastOffer)));
 			
 			//t = INITIAL_T + (timeline.getTime() * 0.6);
-			t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * (1 - INITIAL_T);
+			//t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * (0.48 - INITIAL_T);
+			//t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * ((getUtility(userModel.getBidRanking().getMaximalBid()) - getUtility(userModel.getBidRanking().getMinimalBid()))/2 - INITIAL_T);
+			//t = INITIAL_T + Math.pow(getTimeLine().getTime(), beta) * ((getUtility(userModel.getBidRanking().getMaximalBid()) - getUtility(userModel.getBidRanking().getMinimalBid()))/2 - INITIAL_T);
+			t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * ((getUtility(userModel.getBidRanking().getMaximalBid()) - getUtility(userModel.getBidRanking().getMinimalBid()))/2 - INITIAL_T)
+					      + coeff;
 			// Change the threshold with time
+			System.out.println("COEFF: " + coeff + " @" + timeline.getTime());
 			
 			System.out.println("Updating T: " + t);		
 			
@@ -271,6 +280,16 @@ public class C3P0 extends AbstractNegotiationParty
 	}
 	// C3P0 END
 	
+	public double calculateCoeff()
+	{
+		double coeff = 0.0;
+		if ((timeline.getTime() >= 0.05) && (timeline.getTime() <= 0.45))
+			if (opponentAvgUtility.size() > 1)
+				coeff = opponentAvgUtility.get(opponentAvgUtility.size() - 2) - opponentAvgUtility.get(opponentAvgUtility.size() - 1);
+		return coeff;
+	}
+	
+	
 	/**
 	 * Remembers the offers received by the opponent.
 	 */
@@ -279,6 +298,7 @@ public class C3P0 extends AbstractNegotiationParty
 	{
 		// C3P0 START
 		double utility = 0.0;
+		double avgUtil = 0.0;
 		// C3P0 END
 		if (action instanceof Offer) 
 		{
@@ -289,6 +309,21 @@ public class C3P0 extends AbstractNegotiationParty
 			updateFreqTable(lastOffer);
 			updateWeightsArray(lastOffer);
 			utility = getOpponentUtility(lastOffer);
+			opponentUtility.add(utility);
+			int index = 0;
+			int size = opponentUtility.size();
+			if (opponentUtility.size() > 3) {
+				index = opponentUtility.size() - 3;
+				size = 3;
+			}
+			double utilSum = 0.0;
+			for (double tmp : opponentUtility.subList(index, opponentUtility.size())) {
+				utilSum += tmp;
+			}
+			avgUtil = utilSum/size;
+			opponentAvgUtility.add(avgUtil);
+			//beta = calculateBeta(beta);
+			coeff = calculateCoeff();
 			// C3P0 END
 		}
 		
@@ -306,6 +341,7 @@ public class C3P0 extends AbstractNegotiationParty
 	        System.out.println(NormWeights.get(i));
 		
 		System.out.println("Valuation for this offer: " + utility);
+		System.out.println("Average utility: " + avgUtil);
 		
 		System.out.println("-----------------------------");
 		// C3P0 END
