@@ -69,7 +69,7 @@ public class Agent36 extends AbstractNegotiationParty
 			System.out.println("Elicitation Cost: " + info.getUser().getElicitationCost());
 			System.out.println("Bid with lowest utility: " + userModel.getBidRanking().getMinimalBid() + "( " + getUtility(userModel.getBidRanking().getMinimalBid()) + " )");
 			System.out.println("Bid with highest utility: " + userModel.getBidRanking().getMaximalBid()  + "( " + getUtility(userModel.getBidRanking().getMaximalBid()) + " )");
-			System.out.println("5th bid in the ranking list: " + userModel.getBidRanking().getBidOrder().get(135) + "( " + getUtility(userModel.getBidRanking().getBidOrder().get(135)) + " )");
+			System.out.println("5th bid in the ranking list: " + userModel.getBidRanking().getBidOrder().get(5) + "( " + getUtility(userModel.getBidRanking().getBidOrder().get(5)) + " )");
 		}
 		
 		AbstractUtilitySpace utilitySpace = info.getUtilitySpace();
@@ -143,9 +143,9 @@ public class Agent36 extends AbstractNegotiationParty
 			System.out.println("Threshold ranking index: " + t_index);
 			System.out.println("Bid ranking: " + (rankingSize - bidOrder.indexOf(lastOffer)));
 			
-			// Change the acceptance threshold as a function of time and the opponent concession coefficient 
-			t = INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * ((getUtility(userModel.getBidRanking().getMaximalBid()) - getUtility(userModel.getBidRanking().getMinimalBid()))/2 - INITIAL_T)
-					      + coeff;
+			// Change the acceptance threshold as a function of time and the opponent concession coefficient and limit it between 0 and 1
+			t = Math.max(0, Math.min(1.0, INITIAL_T + Math.pow(getTimeLine().getTime(), BETA) * ((getUtility(userModel.getBidRanking().getMaximalBid()) - getUtility(userModel.getBidRanking().getMinimalBid()))/2 - INITIAL_T)
+					      + coeff));
 			
 			System.out.println("COEFF: " + coeff + " @" + timeline.getTime());
 			
@@ -278,13 +278,14 @@ public class Agent36 extends AbstractNegotiationParty
 		return rBids;
 	}
 	
+	//Calculate the drop in opponent's utility. Only early conceders are recognized, otherwise continue with regular strategy.
 	public double calculateCoeff()
 	{
-		double coeff = 0.0;
+		double coeff1 = 0.0;
 		if ((timeline.getTime() >= 0.05) && (timeline.getTime() <= 0.45))
 			if (opponentAvgUtility.size() > 1)
-				coeff = opponentAvgUtility.get(opponentAvgUtility.size() - 2) - opponentAvgUtility.get(opponentAvgUtility.size() - 1);
-		return coeff;
+				coeff1 = opponentAvgUtility.get(0) - opponentAvgUtility.get(opponentAvgUtility.size() - 1);
+		return coeff1;
 	}
 	
 	
@@ -308,6 +309,7 @@ public class Agent36 extends AbstractNegotiationParty
 			opponentUtility.add(utility);
 			int index = 0;
 			int size = opponentUtility.size();
+			//calculate average opponent utility over last 3 bids
 			if (opponentUtility.size() > 3) {
 				index = opponentUtility.size() - 3;
 				size = 3;
